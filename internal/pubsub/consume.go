@@ -1,7 +1,9 @@
 package pubsub
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -30,8 +32,8 @@ func DeclareAndBind(
 		queueName,
 		queueType == SimpleQueueDurable,
 		queueType != SimpleQueueDurable,
-		queueType != SimpleQueueDurable, 
-		false,                           
+		queueType != SimpleQueueDurable,
+		false,
 		nil,
 	)
 	if err != nil {
@@ -41,11 +43,41 @@ func DeclareAndBind(
 		queue.Name,
 		key,
 		exchange,
-		false, 
-		nil,   
+		false,
+		nil,
 	)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("could not bind queue: %v", err)
 	}
 	return ch, queue, err
+}
+
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
+	handler func(T),
+) error {
+	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return fmt.Errorf("could not declare and bind queue: %v", err)
+	}
+	delivery, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("could not consume from queue: %v", err)
+	}
+	go func() {
+		for msg := range delivery {
+			var val T
+			if err := json.Unmarshal(msg.Body, &val); err != nil {
+				log.Printf("could not unmarshal message: %v", err)
+				continue
+			}
+			handler(val)
+			msg.Ack(false)
+		}
+	}()
+	return nil
 }
