@@ -102,16 +102,29 @@ func main() {
 	}
 }
 
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
-	return func(state routing.PlayingState) {
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.AckType {
+	return func(state routing.PlayingState) pubsub.AckType {
 		defer fmt.Print("> ")
 		gs.HandlePause(state)
+		return pubsub.Ack
 	}
 }
 
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
-	return func(move gamelogic.ArmyMove) {
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.AckType {
+	return func(move gamelogic.ArmyMove) pubsub.AckType {
 		defer fmt.Print("> ")
-		gs.HandleMove(move)
+		outcome := gs.HandleMove(move)
+		switch outcome {
+		case gamelogic.MoveOutComeSafe:
+			fmt.Printf("Move to %s was successful!\n", move.ToLocation)
+			return pubsub.Ack
+		case gamelogic.MoveOutcomeMakeWar:
+			fmt.Printf("You are now at war with %s!\n", move.Player.Username)
+			return pubsub.Ack
+		case gamelogic.MoveOutcomeSamePlayer:
+			fmt.Printf("You cannot move your own units!\n")
+			return pubsub.NackDiscard
+		}
+		return pubsub.Ack
 	}
 }
